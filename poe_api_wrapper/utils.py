@@ -1,7 +1,7 @@
 import os, string, secrets, base64
 from urllib.parse import urlparse
 from httpx import Client
-from loguru import logger
+from logging import logger
 
 BASE_URL = 'https://poe.com'
 HEADERS = {
@@ -42,6 +42,7 @@ SubscriptionsMutation = {
 
 
 BOTS_LIST = {
+    'App-Creator': 'app_creator',
     'Assistant': 'capybara',
     'Claude-3.5-Sonnet': 'claude_3_igloo',
     'Claude-3-Opus': 'claude_2_1_cedar',

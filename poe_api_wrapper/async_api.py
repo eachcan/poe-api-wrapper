@@ -35,13 +35,12 @@ class AsyncPoeApi:
     HEADERS = HEADERS
     MAX_CONCURRENT_MESSAGES = 3
     
-    def __init__(self, tokens: dict={}, proxy: list=[], auto_proxy: bool=False):
+    def __init__(self, tokens: dict={}, proxy: list=[]):
         self.client = None
         if not {'p-b', 'p-lat'}.issubset(tokens):
             raise ValueError("Please provide valid p-b and p-lat cookies")
         
         self.proxy: list = proxy
-        self.auto_proxy: bool = auto_proxy
         self.tokens: dict = tokens
         self.formkey: str = ""
         self.ws_connecting: bool = False
@@ -80,12 +79,10 @@ class AsyncPoeApi:
         if self.formkey == "":
             await self.load_bundle()
         
-        if self.proxy != [] or self.auto_proxy == True:
-            await self.select_proxy(self.proxy, auto_proxy=self.auto_proxy)
-        elif self.proxy == [] and self.auto_proxy == False:
-            await self.connect_ws() 
+        if self.proxy:
+            await self.select_proxy(self.proxy)
         else:
-            raise ValueError("Please provide a valid proxy list or set auto_proxy to False")
+            await self.connect_ws()
         
         logger.info("Async instance created")
 
@@ -107,24 +104,20 @@ class AsyncPoeApi:
             logger.error(f"Failed to load bundle. Reason: {e}")
             logger.warning("Failed to get formkey from bundle. Please provide a valid formkey manually." if self.formkey == "" else "Continuing with provided formkey")
         
-    async def select_proxy(self, proxy: list, auto_proxy: bool=False):
-        if proxy == [] and auto_proxy == True:
-            if not PROXY:
-                raise ValueError("Please install ballyregan for auto proxy")
-            proxies = fetch_proxy()
-        elif proxy != [] and auto_proxy == False:
-            proxies = proxy
-        else:
-            raise ValueError("Please provide a valid proxy list or set auto_proxy to False")
-        for p in range(len(proxies)):
+    async def select_proxy(self, proxy: list):
+        if not proxy:
+            raise ValueError("Please provide a valid proxy list")
+            
+        proxies = format_proxies(proxy)
+        for proxy_config in proxies:
             try:
-                self.proxies = proxies[p]
+                self.proxies = proxy_config
                 self.client.proxies = self.proxies
                 await self.connect_ws()
-                logger.info(f"Connection established with {proxies[p]}")
+                logger.info(f"Connection established with {proxy_config}")
                 break
-            except:
-                logger.info(f"Connection failed with {proxies[p]}. Trying {p+1}/{len(proxies)} ...")
+            except Exception as e:
+                logger.warning(f"Failed to connect with proxy {proxy_config}: {e}")
                 await asyncio.sleep(1)
 
     async def send_request(self, path: str, query_name: str="", variables: dict={}, file_form: list=[], knowledge: bool=False, ratelimit: int = 0):

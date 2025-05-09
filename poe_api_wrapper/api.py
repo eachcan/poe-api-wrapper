@@ -29,7 +29,7 @@ class PoeApi:
     HEADERS = HEADERS
     MAX_CONCURRENT_MESSAGES = 3
 
-    def __init__(self, tokens: dict={}, proxy: list=[], auto_proxy: bool=False):
+    def __init__(self, tokens: dict={}, proxy: list=[]):
         self.client = None
         if not {'p-b', 'p-lat'}.issubset(tokens):
             raise ValueError("Please provide valid p-b and p-lat cookies")
@@ -69,12 +69,13 @@ class PoeApi:
         if self.formkey == "":
             self.load_bundle()
 
-        if proxy != [] or auto_proxy == True:
-            self.select_proxy(proxy, auto_proxy=auto_proxy)
-        elif proxy == [] and auto_proxy == False:
-            self.connect_ws() 
+        if self.formkey == "":
+            raise ValueError("Parse formkey Fail")
+
+        if proxy:
+            self.select_proxy(proxy)
         else:
-            raise ValueError("Please provide a valid proxy list or set auto_proxy to False")
+            self.connect_ws()
         
     def __del__(self):
         if self.client:
@@ -92,24 +93,20 @@ class PoeApi:
             logger.error(f"Failed to load bundle. Reason: {e}")
             logger.warning("Failed to get formkey from bundle. Please provide a valid formkey manually." if self.formkey == "" else "Continuing with provided formkey")
             
-    def select_proxy(self, proxy: list, auto_proxy: bool=False):
-        if proxy == [] and auto_proxy == True:
-            if not PROXY:
-                raise ValueError("Please install ballyregan for auto proxy")
-            proxies = fetch_proxy()
-        elif proxy != [] and auto_proxy == False:
-            proxies = proxy
-        else:
-            raise ValueError("Please provide a valid proxy list or set auto_proxy to False")
-        for p in range(len(proxies)):
+    def select_proxy(self, proxy: list):
+        if not proxy:
+            raise ValueError("Please provide a valid proxy list")
+            
+        proxies = format_proxies(proxy)
+        for proxy_config in proxies:
             try:
-                self.proxies = proxies[p]
-                self.client.proxies = self.proxies 
+                self.proxies = proxy_config
+                self.client.proxies = self.proxies
                 self.connect_ws()
-                logger.info(f"Connection established with {proxies[p]}")
+                logger.info(f"Connection established with {proxy_config}")
                 break
-            except:
-                logger.info(f"Connection failed with {proxies[p]}. Trying {p+1}/{len(proxies)} ...")
+            except Exception as e:
+                logger.warning(f"Failed to connect with proxy {proxy_config}: {e}")
                 sleep(1)
     
     def send_request(self, path: str, query_name: str="", variables: dict={}, file_form: list=[], knowledge: bool=False, ratelimit: int = 0):
