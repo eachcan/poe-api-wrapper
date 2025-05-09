@@ -1,7 +1,7 @@
 from httpx import AsyncClient, ConnectError, ReadTimeout
 import asyncio, orjson, random, ssl, threading, websocket, string, secrets, os, hashlib, re, aiofiles
 from typing import  AsyncIterator
-from loguru import logger
+from .logger import logger
 from requests_toolbelt import MultipartEncoder
 
 # Allow multi-threading for asyncio

@@ -1,5 +1,5 @@
 from typing import Dict
-from loguru import logger
+from .logger import logger
 
 try:
     from .openai.api import start_server

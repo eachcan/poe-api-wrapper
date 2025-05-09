@@ -2,7 +2,7 @@ from time import sleep
 from httpx import Client, ReadTimeout, ConnectError
 from requests_toolbelt import MultipartEncoder
 import os, secrets, string, random, websocket, orjson, threading, queue, ssl, hashlib, re
-from loguru import logger
+from .logger import logger
 from typing import Generator
 from .utils import (
                     BASE_URL,

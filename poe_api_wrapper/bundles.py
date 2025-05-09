@@ -1,6 +1,6 @@
 from httpx import Client
 from bs4 import BeautifulSoup
-from loguru import logger
+from .logger import logger
 import quickjs
 import re
 

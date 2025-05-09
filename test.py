@@ -1,7 +1,8 @@
 from poe_api_wrapper import PoeApi
-import unittest, random, string, loguru
+import unittest, random, string
+from poe_api_wrapper.logger import logger
 
-loguru.logger.disable('poe_api_wrapper')
+logger.disabled = True
 
 p_b = input("Enter your p-b cookie: ")
 p_lat = input("Enter your p-lat cookie: ")

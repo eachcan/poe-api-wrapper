@@ -1,6 +1,6 @@
 import random, string, time
 from heapq import nlargest
-from loguru import logger
+from ..logger import logger
 
 from nltk.data import find as resource_find
 from nltk import download as nltk_download
