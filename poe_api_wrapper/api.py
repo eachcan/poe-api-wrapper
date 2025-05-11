@@ -1,4 +1,5 @@
 from time import sleep
+import traceback
 from httpx import Client, ReadTimeout, ConnectError
 from requests_toolbelt import MultipartEncoder
 import os, secrets, string, random, websocket, orjson, threading, queue, ssl, hashlib, re
@@ -29,7 +30,7 @@ class PoeApi:
     HEADERS = HEADERS
     MAX_CONCURRENT_MESSAGES = 3
 
-    def __init__(self, tokens: dict={}, proxy: list=[]):
+    def __init__(self, tokens: dict={}, proxy: str = ''):
         self.client = None
         if not {'p-b', 'p-lat'}.issubset(tokens):
             raise ValueError("Please provide valid p-b and p-lat cookies")
@@ -45,10 +46,28 @@ class PoeApi:
         self.retry_attempts: int = 3
         self.ws_refresh: int = 3
         self.groups: dict = {}
-        self.proxies: dict = {}
+        self.proxies: dict = ''
         self.bundle: PoeBundle = None
-        
-        self.client = Client(headers=self.HEADERS, timeout=60, http2=True)
+
+        if proxy:
+            self.client = Client(
+            headers=self.HEADERS,
+            timeout=60,
+            http2=True,
+            proxy=proxy,
+            verify=True,
+            follow_redirects=True,
+            http1=False
+        )
+        else:
+            self.client = Client(
+                headers=self.HEADERS,
+                timeout=60,
+                http2=True,
+                verify=True,
+                follow_redirects=True,
+                http1=False
+            )
         self.client.cookies.update({
                                 'p-b': self.tokens['p-b'], 
                                 'p-lat': self.tokens['p-lat']
@@ -72,10 +91,7 @@ class PoeApi:
         if self.formkey == "":
             raise ValueError("Parse formkey Fail")
 
-        if proxy:
-            self.select_proxy(proxy)
-        else:
-            self.connect_ws()
+        self.connect_ws()
         
     def __del__(self):
         if self.client:
@@ -92,22 +108,6 @@ class PoeApi:
         except Exception as e:
             logger.error(f"Failed to load bundle. Reason: {e}")
             logger.warning("Failed to get formkey from bundle. Please provide a valid formkey manually." if self.formkey == "" else "Continuing with provided formkey")
-            
-    def select_proxy(self, proxy: list):
-        if not proxy:
-            raise ValueError("Please provide a valid proxy list")
-            
-        proxies = format_proxies(proxy)
-        for proxy_config in proxies:
-            try:
-                self.proxies = proxy_config
-                self.client.proxies = self.proxies
-                self.connect_ws()
-                logger.info(f"Connection established with {proxy_config}")
-                break
-            except Exception as e:
-                logger.warning(f"Failed to connect with proxy {proxy_config}: {e}")
-                sleep(1)
     
     def send_request(self, path: str, query_name: str="", variables: dict={}, file_form: list=[], knowledge: bool=False, ratelimit: int = 0):
         if ratelimit > 0:
@@ -118,8 +118,10 @@ class PoeApi:
         try:
             payload = generate_payload(query_name, variables)
             base_string = payload + self.formkey + "4LxgHM6KpFqokX0Ox"
+            
+            headers = self.HEADERS
             if file_form == []:
-                headers = {'Content-Type': 'application/json'}
+                headers['Content-Type'] = 'application/json'
             else:
                 fields = {'queryInfo': payload}
                 if not knowledge:
@@ -130,16 +132,58 @@ class PoeApi:
                 payload = MultipartEncoder(
                     fields=fields
                     )
-                headers = {'Content-Type': payload.content_type}
+                headers['Content-Type'] = payload.content_type
                 payload = payload.to_string()
             
             headers.update({
                 "poe-tag-id": hashlib.md5(base_string.encode()).hexdigest(),
+                'poe-formkey': self.formkey,
+                'poe-queryname': query_name,
+                'poe-tchannel': self.tchannel_data['channel'],
+                'poegraphql': '0'
             })
-            response = self.client.post(f'{self.BASE_URL}/api/{path}', data=payload, headers=headers, follow_redirects=True, timeout=30)
             
+            # print('-----headers--------')
+            # print(headers)
+            # print('-----payload--------')
+            # print(payload)
+            print('-----pre-post---------')
+            response = self.client.post(f'{self.BASE_URL}/api/{path}', data=payload, headers=headers, follow_redirects=True, timeout=30)
+            print('-----after-post, see res headers---------')
+            print('Content-Encoding:', response.headers.get('content-encoding'))
+            print('Content-Type:', response.headers.get('content-type'))
+            print('All headers:', dict(response.headers))
+            print('-----status code---------')
             status_code = response.status_code
-            json_data = orjson.loads(response.text)
+            print(f'Status Code: {status_code}')
+            
+            print('-----text---------')
+            text = response.text
+            print(f'Type of text: {type(text)}')
+            print('Text content:')
+            print(text)
+            
+            print('-----content---------')
+            content = response.content
+            print(f'Type of content: {type(content)}')
+            print('Content in hex:')
+            print(' '.join(f'{b:02x}' for b in content[:100]))
+            
+            # Try to decompress if it's brotli compressed
+            if content.startswith(b'\x21\xcc'):
+                try:
+                    import brotli
+                    decompressed = brotli.decompress(content)
+                    print('\n-----Decompressed content (first 1000 bytes)-----')
+                    print(decompressed[:1000].decode('utf-8'))
+                except Exception as e:
+                    print('\nFailed to decompress with brotli:', str(e))
+
+            with open("a.txt", 'w', encoding='utf-8') as file:
+                file.write(text)
+
+            print('-----end text---------')
+            json_data = orjson.loads(text)
 
             if (
                 "success" in json_data.keys()
@@ -178,16 +222,22 @@ class PoeApi:
                 return self.send_request(path, query_name, variables, file_form, ratelimit=ratelimit + 1)
 
             error_code = f"status_code:{status_code}, " if status_code else ""
+            traceback.print_exception(e)
             raise Exception(
                 f"Sending request {query_name} failed. {error_code} Error log: {repr(e)}"
             )
     
     def get_channel_settings(self):
-        response_json = orjson.loads(self.client.get(f'{self.BASE_URL}/api/settings', headers=self.HEADERS, follow_redirects=True, timeout=30).text)
+        text = self.client.get(f'{self.BASE_URL}/api/settings', headers=self.HEADERS, follow_redirects=True, timeout=30).text
+        print('\n======')
+        print(text)
+        print('------')
+        response_json = orjson.loads(text)
         self.ws_domain = f"tch{random.randint(1, int(1e6))}"[:11]
         self.tchannel_data = response_json["tchannelData"]
         self.client.headers["Poe-Tchannel"] = self.tchannel_data["channel"]
         self.channel_url = f'ws://{self.ws_domain}.tch.{self.tchannel_data["baseHost"]}/up/{self.tchannel_data["boxName"]}/updates?min_seq={self.tchannel_data["minSeq"]}&channel={self.tchannel_data["channel"]}&hash={self.tchannel_data["channelHash"]}'
+        print(self.channel_url)
         self.subscribe()
     
     def subscribe(self):
@@ -201,7 +251,6 @@ class PoeApi:
             self.ws.run_forever(**kwargs)
              
     def connect_ws(self, timeout=20):
-        
         if self.ws_connected:
             return
 
@@ -867,7 +916,7 @@ class PoeApi:
                         
                 if response["state"] == "complete":
                     if suggest_replies:
-                        if suggest_attempts > 0 and len(response["followupActions"]) <= 6:
+                        if suggest_attempts > 0 and 'followupActions' in response and len(response["followupActions"]) <= 6:
                             actions = response["followupActions"]
                             suggestedReplies = [action["bodyText"] for action in actions]
                             suggest_attempts -= 1     

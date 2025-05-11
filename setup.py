@@ -17,7 +17,7 @@ setup(
     long_description=long_description,
     packages=find_packages(),
     python_requires=">=3.7",
-    install_requires=['httpx[http2]', 'websocket-client', 'requests_toolbelt', 'rich==13.3.4', 'beautifulsoup4', 'quickjs', 'nest-asyncio', 'orjson', 'aiofiles'],
+    install_requires=['httpx[http2]', 'websocket-client', 'requests_toolbelt', 'rich==13.3.4', 'beautifulsoup4', 'py-mini-racer', 'nest-asyncio', 'orjson', 'aiofiles'],
     extras_require={
         'llm': ['fastapi', 'pydantic', 'nltk', 'daphne', 'openai', 'Twisted[tls,http2]', 'tiktoken'],
         'tests': ['tox'],

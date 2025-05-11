@@ -1,7 +1,7 @@
 from httpx import Client
 from bs4 import BeautifulSoup
 from .logger import logger
-import quickjs
+from py_mini_racer import MiniRacer
 import re
 
 class PoeBundle:
@@ -20,25 +20,37 @@ class PoeBundle:
         # initialize the window object with document scripts
         logger.info("Initializing web data")
 
-        scripts = BeautifulSoup(document, "html.parser").find_all('script')
-        for script in scripts:
-            if (src := script.attrs.get("src")) and (src not in self._src_scripts):
-                if "_app" in src:
-                    self.init_app(src)
-                if "buildManifest" in src:
-                    self.extend_src_scripts(src)
-                elif "webpack" in src:
-                    self._webpack_script = src
-                    self.extend_src_scripts(src)
-                else:
-                    self._src_scripts.append(src)
-            elif ("document." in script.text) or ("function" not in script.text):
-                continue
-            elif script.attrs.get("type") == "application/json":
-                continue
-            self._window += script.text
+        if not document:
+            logger.error("Empty document received")
+            return
 
-        logger.info("Web data initialized")
+        try:
+            scripts = BeautifulSoup(document, "html.parser").find_all('script')
+            logger.info(f"Found {len(scripts)} script tags")
+
+            for script in scripts:
+                if (src := script.attrs.get("src")) and (src not in self._src_scripts):
+                    if "_app" in src:
+                        logger.info(f"Found app script: {src}")
+                        self.init_app(src)
+                    if "buildManifest" in src:
+                        logger.info(f"Found manifest script: {src}")
+                        self.extend_src_scripts(src)
+                    elif "webpack" in src:
+                        logger.info(f"Found webpack script: {src}")
+                        self._webpack_script = src
+                        self.extend_src_scripts(src)
+                    else:
+                        self._src_scripts.append(src)
+                elif ("document." in script.text) or ("function" not in script.text):
+                    continue
+                elif script.attrs.get("type") == "application/json":
+                    continue
+                self._window += script.text
+
+            logger.info("Web data initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize web data: {e}")
 
     def init_app(self, src: str):
         script = self.load_src_script(src)
@@ -59,11 +71,23 @@ class PoeBundle:
 
     @staticmethod
     def load_src_script(src: str) -> str:
-        with Client() as client:
-            resp = client.get(src)
-        if resp.status_code != 200:
-            logger.warning(f"Failed to load script {src}, status code: {resp.status_code}")
-        return resp.text
+        with Client(
+            proxies={'http://': 'http://127.0.0.1:7890', 'https://': 'http://127.0.0.1:7890'},
+            verify=True,
+            follow_redirects=True,
+            http2=True,
+            http1=False,
+            timeout=30
+        ) as client:
+            try:
+                resp = client.get(src)
+                if resp.status_code != 200:
+                    logger.warning(f"Failed to load script {src}, status code: {resp.status_code}")
+                    return ""
+                return resp.text
+            except Exception as e:
+                logger.error(f"Failed to load script {src}: {e}")
+                return ""
 
     @staticmethod
     def get_base_url(src: str) -> str:
@@ -77,7 +101,7 @@ class PoeBundle:
             raise RuntimeError("Failed to parse form-key function in Poe document")
         
         script += f'window.{secret}().slice(0, 32);'
-        context = quickjs.Context()
+        context = MiniRacer()
         formkey = str(context.eval(script))
         logger.info(f"Retrieved formkey successfully: {formkey}")
         return formkey
